@@ -1,6 +1,7 @@
 import streamlit as st 
 from PIL import Image
-import chat_ui
+from chat_ui import start_chat
+import os
 
 # how to put text on webpage
 
