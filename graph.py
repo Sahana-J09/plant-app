@@ -1,91 +1,117 @@
 from langchain_openai import ChatOpenAI
 from langgraph.graph import StateGraph, START, END
 from pydantic import BaseModel
-from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
+
+from langchain_core.messages import SystemMessage, BaseMessage, HumanMessage, AIMessage
+
+from langsmith import Client
+from langsmith import traceable
 
 
 class AgentState(BaseModel):
-    """State of the soil agent."""
-    messages: list = [] 
+    """State of the agent."""
+    messages: list = []
     response: str = ""
-    category: str = ""   
-    soil_data: dict = {} 
-
+    category: str = ""
 
 class Category(BaseModel):
-    """Category used for routing."""
+    """Category for the agent."""
     category: str
-
-
-def create_llm_msg(system_prompt, history):
-    """Convert chat history into structured LLM messages."""
-    resp = [SystemMessage(content=system_prompt)]
-    for m in history:
-        if m["role"] == "user":
-            resp.append(HumanMessage(content=m["content"]))
-        elif m["role"] == "assistant":
-            resp.append(AIMessage(content=m["content"]))
+    
+@traceable(run_type="tool")
+def create_llm_msg(system_prompt,history):
+    resp=[SystemMessage(content=system_prompt)]
+    msgs = history
+    for m in msgs:
+        resp.append(m)
     return resp
-
-
-class ChatbotAgent:
-    """Soil analysis chatbot agent."""
+    
+    
+class ChatbotAgent():
+    """A chatbot agent that interacts with users."""
 
     def __init__(self, api_key: str):
         self.model = ChatOpenAI(model_name="gpt-5-nano", openai_api_key=api_key)
-
         workflow = StateGraph(AgentState)
         workflow.add_node("classifier", self.classifier)
-        workflow.add_node("soil_agent", self.soil_agent)
-        workflow.add_node("general_agent", self.general_agent)
-
+        workflow.add_node("smalltalk", self.smalltalk_agent)
+        workflow.add_node("analyze_soil_report", self.complaint_agent)
+        workflow.add_node("identify_plant_disease", self.status_agent)
+        workflow.add_node("provide_gardening_tips", self.status_agent)
+        workflow.add_node("feedback", self.feedback_agent)
+        
         workflow.add_edge(START, "classifier")
         workflow.add_conditional_edges("classifier", self.main_router)
-        workflow.add_edge("soil_agent", END)
-        workflow.add_edge("general_agent", END)
+        workflow.add_edge("smalltalk", END)
+        workflow.add_edge("analyze_soil_report", END)
+        workflow.add_edge("identify_plant_disease", END)
+        workflow.add_edge("provide_gardening_tips", END)
+        workflow.add_edge("feedback", END)
 
         self.graph = workflow.compile()
 
+
+
     def classifier(self, state: AgentState):
-        """Classify query as soil-related or general."""
+        #print("Initial classsifier")
+        messages=state.messages
         CLASSIFIER_PROMPT = """
-        You are a classifier that decides whether the user's message is about SOIL or GENERAL topics.
-        If the user mentions soil, crops, nutrients, moisture, or fertilizers — classify as "soil_agent".
-        Otherwise classify as "general_agent".
+        You are a helpful assistant that classifies user messages into categories.
+        Given the following messages, classify them into one of the following categories:
+        - smalltalk
+        - analyze_soil_report
+        - identify_plant_disease
+        - provide_gardening_tips
+        - feedback
+
+        If you don't know the category, classify it as "smalltalk".
         """
         llm_messages = create_llm_msg(CLASSIFIER_PROMPT, state.messages)
         llm_response = self.model.with_structured_output(Category).invoke(llm_messages)
-        category = llm_response.category.strip().lower()
+        category=llm_response.category
         print(f"Classified category: {category}")
-        return {"category": category}
+        return {"category":category}
 
     def main_router(self, state: AgentState):
-        """Route to the correct agent."""
-        if state.category == "soil_agent":
-            return "soil_agent"
-        return "general_agent"
+        #print("Routing to appropriate agent based on category")
+        #print(f"DEBUG: Current state: {state}")
+        #print(f"DEBUG: Current category: {state.category}")
+        return state.category
 
-    def soil_agent(self, state: AgentState):
-        SOIL_PROMPT = """
-        You are a smart soil compatibility assistant.
-
-        Given soil data (N, P, K, pH, humidity, temperature, region) and a crop name,
-        determine:
-        1. Soil suitability for that crop (0–100%).
-        2. Which nutrients are deficient or excessive.
-        3. How to improve soil health and crop yield.
-        4. If possible, suggest alternative crops better suited to that soil.
-
-        Be concise but specific, and use an expert yet friendly tone.
+    def smalltalk_agent(self, state: AgentState):
+        print("Smalltalk agent processing....")
+        SMALLTALK_PROMPT = f"""
+        You are a smalltalk agent that engages in casual conversation.
+        Given the following messages, respond appropriately to the user's message.
         """
-        llm_messages = create_llm_msg(SOIL_PROMPT, state.messages)
-        return {"response": self.model.stream(llm_messages), "category": "soil_agent"}
+        llm_messages = create_llm_msg(SMALLTALK_PROMPT, state.messages)
+        return {"response": self.model.stream(llm_messages), "category": "smalltalk_agent"}
 
-    def general_agent(self, state: AgentState):
-        """Fallback for non-soil conversations."""
-        GENERAL_PROMPT = """
-        You are a helpful assistant for general agricultural questions.
-        Respond clearly and supportively to the user’s query.
+    def complaint_agent(self, state: AgentState):
+        print("Complaint agent processing....")
+        COMPLAINT_PROMPT = f"""
+        You are a complaint agent that addresses user complaints.
+        Given the following messages, respond appropriately to the user's complaint.
         """
-        llm_messages = create_llm_msg(GENERAL_PROMPT, state.messages)
-        return {"response": self.model.stream(llm_messages), "category": "general_agent"}
+        llm_messages = create_llm_msg(COMPLAINT_PROMPT, state.messages)
+        return {"response": self.model.stream(llm_messages), "category": "complaint_agent"}
+
+    def status_agent(self, state: AgentState):
+        print("Status agent processing....")
+        STATUS_PROMPT = f"""
+        You are a status agent that provides updates on user requests.
+        Given the following messages, respond appropriately to the user's request for status.
+        """
+        llm_messages = create_llm_msg(STATUS_PROMPT, state.messages)
+        return {"response": self.model.stream(llm_messages), "category": "status_agent"}
+
+    def feedback_agent(self, state: AgentState):
+        print("Feedback agent processing....")
+        FEEDBACK_PROMPT = f"""
+        You are a feedback agent that collects user feedback.
+        Given the following messages, respond appropriately to the user's feedback.
+        """
+        llm_messages = create_llm_msg(FEEDBACK_PROMPT, state.messages)
+        return {"response": self.model.stream(llm_messages), "category": "feedback_agent"}
+    
+    
