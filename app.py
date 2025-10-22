@@ -12,8 +12,8 @@ st.image(image, caption="Lots of plants")
 st.title("🌾 Smart Soil Compatibility App")
 st.markdown('''> This application suggests crops suitable for your soil based on NPK, pH, and weather data.''')
 
-st.sidebar.title("⚙️ Controls")
-st.sidebar.write("Adjust or add features here later.")
+#st.sidebar.title("⚙️ Controls")
+#st.sidebar.write("Adjust or add features here later.")
 
 os.environ["LANGCHAIN_TRACING_V2"]="true"
 os.environ["LANGCHAIN_API_KEY"]=st.secrets['LANGCHAIN_API_KEY']
